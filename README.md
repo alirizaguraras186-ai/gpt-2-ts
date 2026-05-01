@@ -19,7 +19,7 @@ Install TypeScript typings/compiler:
 npm install
 ```
 
-Download and convert OpenAI's original GPT-2 124M checkpoint:
+Download and convert OpenAI's original GPT-2 checkpoint:
 
 ```bash
 cd convert
@@ -28,6 +28,15 @@ uv run python download_model.py 124M
 uv run python convert.py --model 124M --clean
 cd ..
 ```
+
+Other original GPT-2 sizes should also work:
+
+```bash
+uv run python download_model.py 355M   # or 774M, 1558M
+uv run python convert.py --model 355M --clean
+```
+
+The runtime reads `tensors/hparams.json`, so model dimensions are not hardcoded. The 1558M model needs many GB of RAM/disk.
 
 This creates local, gitignored directories:
 

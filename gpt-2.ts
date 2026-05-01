@@ -1,25 +1,17 @@
+import fs from "node:fs";
 import path from "node:path";
-import {
-	add,
-	addInPlace,
-	geluInPlace,
-	layerNorm,
-	loadTensor,
-	matvec,
-	matvecRows,
-	row,
-	type Tensor,
-} from "./tensor.ts";
+import { add, addInPlace, geluInPlace, layerNorm, loadTensor, matvec, matvecRows, row, type Tensor } from "./tensor.ts";
 import { GPT2Tokenizer } from "./tokenizer.ts";
 
-const N_LAYER = 12;
-const N_HEAD = 12;
-const N_EMBD = 768;
-const N_CTX = 1024;
-const N_VOCAB = 50257;
-const N_MLP = 3072;
 const EOS_TOKEN = 50256;
-const HEAD_DIM = N_EMBD / N_HEAD;
+
+type HParams = {
+	n_vocab: number;
+	n_ctx: number;
+	n_embd: number;
+	n_head: number;
+	n_layer: number;
+};
 
 export type Block = {
 	ln1Gamma: Tensor;
@@ -37,6 +29,9 @@ export type Block = {
 };
 
 export type GPT2 = {
+	hparams: HParams;
+	nMlp: number;
+	headDim: number;
 	tokenizer: GPT2Tokenizer;
 	tokenEmbedding: Tensor;
 	positionEmbedding: Tensor;
@@ -46,7 +41,6 @@ export type GPT2 = {
 };
 
 export type KVCache = {
-	// One flat [N_CTX, N_EMBD] K and V array per block.
 	k: Float32Array[];
 	v: Float32Array[];
 };
@@ -62,13 +56,20 @@ export type Workspace = {
 	scores: Float32Array;
 };
 
+function loadHParams(root: string): HParams {
+	const h = JSON.parse(fs.readFileSync(path.join(root, "tensors/hparams.json"), "utf8"));
+	return {
+		n_vocab: h.n_vocab,
+		n_ctx: h.n_ctx,
+		n_embd: h.n_embd,
+		n_head: h.n_head,
+		n_layer: h.n_layer,
+	};
+}
+
 function loadBlock(root: string, i: number): Block {
-	const dir = path.join(
-		root,
-		"tensors",
-		`block_${i.toString().padStart(2, "0")}`,
-	);
-	const block: Block = {
+	const dir = path.join(root, "tensors", `block_${i.toString().padStart(2, "0")}`);
+	return {
 		ln1Gamma: loadTensor(path.join(dir, "ln_1_gamma.tensor")),
 		ln1Beta: loadTensor(path.join(dir, "ln_1_beta.tensor")),
 		attnQkvWeight: loadTensor(path.join(dir, "attn_qkv_weight.tensor")),
@@ -82,50 +83,49 @@ function loadBlock(root: string, i: number): Block {
 		mlpProjWeight: loadTensor(path.join(dir, "mlp_proj_weight.tensor")),
 		mlpProjBias: loadTensor(path.join(dir, "mlp_proj_bias.tensor")),
 	};
-
-	return block;
 }
 
 export function loadGPT2(root = "."): GPT2 {
-	const tokenEmbedding = loadTensor(
-		path.join(root, "tensors/token_embedding.tensor"),
-	);
-	const positionEmbedding = loadTensor(
-		path.join(root, "tensors/position_embedding.tensor"),
-	);
-	const lnFGamma = loadTensor(path.join(root, "tensors/ln_f_gamma.tensor"));
-	const lnFBeta = loadTensor(path.join(root, "tensors/ln_f_beta.tensor"));
+	const hparams = loadHParams(root);
+	const nMlp = 4 * hparams.n_embd;
+	const headDim = hparams.n_embd / hparams.n_head;
+	if (!Number.isInteger(headDim)) throw new Error("n_embd must be divisible by n_head");
 
 	const blocks: Block[] = [];
-	for (let i = 0; i < N_LAYER; i++) blocks.push(loadBlock(root, i));
+	for (let i = 0; i < hparams.n_layer; i++) blocks.push(loadBlock(root, i));
 
 	return {
+		hparams,
+		nMlp,
+		headDim,
 		tokenizer: new GPT2Tokenizer(path.join(root, "tensors/tokenizer")),
-		tokenEmbedding,
-		positionEmbedding,
-		lnFGamma,
-		lnFBeta,
+		tokenEmbedding: loadTensor(path.join(root, "tensors/token_embedding.tensor")),
+		positionEmbedding: loadTensor(path.join(root, "tensors/position_embedding.tensor")),
+		lnFGamma: loadTensor(path.join(root, "tensors/ln_f_gamma.tensor")),
+		lnFBeta: loadTensor(path.join(root, "tensors/ln_f_beta.tensor")),
 		blocks,
 	};
 }
 
-export function createKVCache(): KVCache {
+export function createKVCache(model: GPT2): KVCache {
+	const { n_layer, n_ctx, n_embd } = model.hparams;
 	return {
-		k: Array.from({ length: N_LAYER }, () => new Float32Array(N_CTX * N_EMBD)),
-		v: Array.from({ length: N_LAYER }, () => new Float32Array(N_CTX * N_EMBD)),
+		k: Array.from({ length: n_layer }, () => new Float32Array(n_ctx * n_embd)),
+		v: Array.from({ length: n_layer }, () => new Float32Array(n_ctx * n_embd)),
 	};
 }
 
-export function createWorkspace(): Workspace {
+export function createWorkspace(model: GPT2): Workspace {
+	const { n_vocab, n_ctx, n_embd } = model.hparams;
 	return {
-		x: new Float32Array(N_EMBD),
-		norm: new Float32Array(N_EMBD),
-		qkv: new Float32Array(3 * N_EMBD),
-		attn: new Float32Array(N_EMBD),
-		proj: new Float32Array(N_EMBD),
-		fc: new Float32Array(N_MLP),
-		logits: new Float32Array(N_VOCAB),
-		scores: new Float32Array(N_CTX),
+		x: new Float32Array(n_embd),
+		norm: new Float32Array(n_embd),
+		qkv: new Float32Array(3 * n_embd),
+		attn: new Float32Array(n_embd),
+		proj: new Float32Array(n_embd),
+		fc: new Float32Array(model.nMlp),
+		logits: new Float32Array(n_vocab),
+		scores: new Float32Array(n_ctx),
 	};
 }
 
@@ -133,47 +133,30 @@ export function encodeText(model: GPT2, text: string): number[] {
 	return model.tokenizer.encode(text);
 }
 
-export function embedToken(
-	out: Float32Array,
-	model: GPT2,
-	tokenId: number,
-	position: number,
-): void {
-	add(
-		out,
-		row(model.tokenEmbedding, tokenId),
-		row(model.positionEmbedding, position),
-	);
+export function embedToken(out: Float32Array, model: GPT2, tokenId: number, position: number): void {
+	add(out, row(model.tokenEmbedding, tokenId), row(model.positionEmbedding, position));
 }
 
-function attention(
-	out: Float32Array,
-	qkv: Float32Array,
-	cache: KVCache,
-	layer: number,
-	pos: number,
-	scores: Float32Array,
-): void {
+function attention(out: Float32Array, model: GPT2, qkv: Float32Array, cache: KVCache, layer: number, pos: number, scores: Float32Array): void {
+	const { n_head, n_embd } = model.hparams;
+	const headDim = model.headDim;
 	const kCache = cache.k[layer];
 	const vCache = cache.v[layer];
-	if (kCache === undefined || vCache === undefined)
-		throw new Error("Invalid KV cache layer");
+	if (kCache === undefined || vCache === undefined) throw new Error("Invalid KV cache layer");
 
-	// Store this token's K,V in cache. qkv layout is [Q all heads][K all heads][V all heads].
-	kCache.set(qkv.subarray(N_EMBD, 2 * N_EMBD), pos * N_EMBD);
-	vCache.set(qkv.subarray(2 * N_EMBD, 3 * N_EMBD), pos * N_EMBD);
+	kCache.set(qkv.subarray(n_embd, 2 * n_embd), pos * n_embd);
+	vCache.set(qkv.subarray(2 * n_embd, 3 * n_embd), pos * n_embd);
 	out.fill(0);
 
-	for (let h = 0; h < N_HEAD; h++) {
-		const head = h * HEAD_DIM;
+	for (let h = 0; h < n_head; h++) {
+		const head = h * headDim;
 		let maxScore = -Infinity;
 
 		for (let t = 0; t <= pos; t++) {
 			let s = 0;
-			const kBase = t * N_EMBD + head;
-			for (let d = 0; d < HEAD_DIM; d++)
-				s += qkv[head + d]! * kCache[kBase + d]!;
-			s /= Math.sqrt(HEAD_DIM);
+			const kBase = t * n_embd + head;
+			for (let d = 0; d < headDim; d++) s += qkv[head + d]! * kCache[kBase + d]!;
+			s /= Math.sqrt(headDim);
 			scores[t] = s;
 			if (s > maxScore) maxScore = s;
 		}
@@ -187,30 +170,19 @@ function attention(
 
 		for (let t = 0; t <= pos; t++) {
 			const a = scores[t]! / sumExp;
-			const vBase = t * N_EMBD + head;
-			for (let d = 0; d < HEAD_DIM; d++)
-				out[head + d] = out[head + d]! + a * vCache[vBase + d]!;
+			const vBase = t * n_embd + head;
+			for (let d = 0; d < headDim; d++) out[head + d] = out[head + d]! + a * vCache[vBase + d]!;
 		}
 	}
 }
 
-function runBlock(
-	x: Float32Array,
-	model: GPT2,
-	block: Block,
-	cache: KVCache,
-	layer: number,
-	pos: number,
-	ws: Workspace,
-): void {
-	// x -> LN -> QKV -> attention -> projection -> residual add.
+function runBlock(x: Float32Array, model: GPT2, block: Block, cache: KVCache, layer: number, pos: number, ws: Workspace): void {
 	layerNorm(ws.norm, x, block.ln1Gamma, block.ln1Beta);
 	matvec(ws.qkv, ws.norm, block.attnQkvWeight, block.attnQkvBias);
-	attention(ws.attn, ws.qkv, cache, layer, pos, ws.scores);
+	attention(ws.attn, model, ws.qkv, cache, layer, pos, ws.scores);
 	matvec(ws.proj, ws.attn, block.attnProjWeight, block.attnProjBias);
 	addInPlace(x, ws.proj);
 
-	// x -> LN -> MLP up -> GELU -> MLP down -> residual add.
 	layerNorm(ws.norm, x, block.ln2Gamma, block.ln2Beta);
 	matvec(ws.fc, ws.norm, block.mlpFcWeight, block.mlpFcBias);
 	geluInPlace(ws.fc);
@@ -218,16 +190,9 @@ function runBlock(
 	addInPlace(x, ws.proj);
 }
 
-// Runs one token at absolute position pos and writes logits for the next token.
-export function forwardToken(
-	model: GPT2,
-	tokenId: number,
-	pos: number,
-	cache: KVCache,
-	ws: Workspace,
-): Float32Array {
+export function forwardToken(model: GPT2, tokenId: number, pos: number, cache: KVCache, ws: Workspace): Float32Array {
 	embedToken(ws.x, model, tokenId, pos);
-	for (let i = 0; i < N_LAYER; i++) {
+	for (let i = 0; i < model.hparams.n_layer; i++) {
 		const block = model.blocks[i];
 		if (block === undefined) throw new Error("Missing block");
 		runBlock(ws.x, model, block, cache, i, pos, ws);
@@ -250,17 +215,13 @@ type SampleOptions = {
 	onToken?: (tokenId: number) => void;
 };
 
-export function sampleTopK(
-	logits: Float32Array,
-	options: SampleOptions,
-): number {
+export function sampleTopK(logits: Float32Array, options: SampleOptions): number {
 	const k = Math.max(1, Math.min(options.topK, logits.length));
 	const temperature = Math.max(options.temperature, 1e-6);
 	const topIds = new Int32Array(k);
 	const topVals = new Float32Array(k);
 	topVals.fill(-Infinity);
 
-	// Keep the k largest logits. Simple O(vocab*k), fine for small k.
 	for (let id = 0; id < logits.length; id++) {
 		const v = logits[id]!;
 		if (v <= topVals[k - 1]!) continue;
@@ -302,8 +263,8 @@ export function generate(
 	options: SampleOptions = { topK: 40, temperature: 0.9, stopOnEos: true },
 ): string {
 	const ids = encodeText(model, prompt);
-	const cache = createKVCache();
-	const ws = createWorkspace();
+	const cache = createKVCache(model);
+	const ws = createWorkspace(model);
 	let logits = ws.logits;
 
 	for (let pos = 0; pos < ids.length; pos++) {
@@ -313,8 +274,7 @@ export function generate(
 	}
 
 	for (let i = 0; i < maxNewTokens; i++) {
-		const next =
-			options.topK <= 1 ? argmax(logits) : sampleTopK(logits, options);
+		const next = options.topK <= 1 ? argmax(logits) : sampleTopK(logits, options);
 		if (options.stopOnEos && next === EOS_TOKEN) break;
 		ids.push(next);
 		options.onToken?.(next);
@@ -326,10 +286,7 @@ export function generate(
 
 function arg(name: string, fallback: string): string {
 	const prefix = `--${name}=`;
-	return (
-		process.argv.find((x) => x.startsWith(prefix))?.slice(prefix.length) ??
-		fallback
-	);
+	return process.argv.find((x) => x.startsWith(prefix))?.slice(prefix.length) ?? fallback;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
