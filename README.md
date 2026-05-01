@@ -1,5 +1,7 @@
 # gpt-2-ts
 
+https://github.com/user-attachments/assets/27c98071-38f1-406d-a653-88b91766fe4e
+
 A tiny GPT-2 124M inference implementation in TypeScript.
 
 The runtime is intentionally simple and C-like: fixed tensor files, `Float32Array` buffers, token-by-token inference, KV cache, top-k sampling, and streaming output.
