@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# Python/uv conversion env
+convert/.venv/
+convert/__pycache__/
+convert/*.pyc
+
+# downloaded original GPT-2 checkpoints
+models/
+
+# converted weights/tokenizer output
+tensors/
+
+# generated/local output
+*.log
+.DS_Store

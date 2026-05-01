@@ -1,0 +1,15 @@
+{
+  "name": "gpt-2-ts",
+  "version": "0.1.0",
+  "description": "Tiny GPT-2 124M inference in TypeScript using converted OpenAI weights.",
+  "type": "module",
+  "scripts": {
+    "start": "node gpt-2.ts",
+    "check": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
+  }
+}
